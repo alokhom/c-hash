@@ -1,0 +1,77 @@
+definitions:
+  services:
+    docker:
+      memory: 2048
+  steps:
+    - step: &build1
+        services:
+          - docker
+        caches:
+          - docker
+        script:
+          # Set $DOCKER_HUB_USERNAME and $DOCKER_HUB_PASSWORD as environment variables in repository settings
+          - export IMAGE_NAME=alokhom/sitecoreimage1:$BITBUCKET_COMMIT
+          # authenticate with the Docker Hub registry
+          - echo ${DOCKER_HUB_PASSWORD} | docker login --username "$DOCKER_HUB_USER" --password-stdin
+          # build the Docker image Service 1
+          - docker build ./src/Service1/ --file ./src/Service1/Dockerfile --tag ${IMAGE_NAME}
+          # push the new Docker image to the Docker registry
+          - docker push ${IMAGE_NAME}
+    - step: &build2
+        services:
+          - docker
+        caches:
+          - docker
+        script:
+          # Set $DOCKER_HUB_USERNAME and $DOCKER_HUB_PASSWORD as environment variables in repository settings
+          - export IMAGE_NAME=alokhom/sitecoreimage2:$BITBUCKET_COMMIT
+          # authenticate with the Docker Hub registry
+          - echo ${DOCKER_HUB_PASSWORD} | docker login --username "$DOCKER_HUB_USER" --password-stdin
+          # build the Docker image Service 2
+          - docker build ./src/Service2/ --file ./src/Service2/Dockerfile --tag ${IMAGE_NAME}
+          # push the new Docker image to the Docker registry
+          - docker push ${IMAGE_NAME}
+    - step: &test1
+        name: make unittest1
+        image: mcr.microsoft.com/dotnet/sdk:3.1-bionic
+        artifacts:
+          download: True
+          paths: # defining artifacts to be passed to each future step
+            - unittest1.txt
+        script:
+          - cd ./src/Service1.UnitTests/
+          - dotnet restore
+          - dotnet test *.csproj > unittest1.txt
+    - step: &test2
+        name: make unittest2
+        image: mcr.microsoft.com/dotnet/sdk:3.1-bionic
+        artifacts:
+          download: True
+          paths: # defining artifacts to be passed to each future step
+            - unittest2.txt
+        script:
+          - cd ./src/Service2.UnitTests/
+          - dotnet test *.csproj > unittest2.txt
+
+pipelines:
+  branches:
+    main:
+      - step: *test1
+      - step: *test2
+      - step: *build1
+      - step:
+          <<: *build2
+          name: Testing on Master
+          after-script:
+            - echo "build done in main branch"
+            - export RAN=$(echo $RANDOM)
+            - git tag mas${RAN}
+            - git push origin --tags
+    feature/*:
+      - step: *test1
+      - step: *test2
+      - step: *build1
+      - step:
+          <<: *build2
+          after-script:
+            - echo "build done in feature branch"
